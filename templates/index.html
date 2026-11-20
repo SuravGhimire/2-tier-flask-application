@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flask + MySQL Docker Lab</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 36px 18px; min-height: 100vh;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, sans-serif;
+      color: #e5e7eb; background: #0b1220;
+    }
+    main { max-width: 760px; margin: auto; }
+    .panel {
+      background: #111c2e; border: 1px solid #26364d;
+      border-radius: 16px; padding: 24px; margin-bottom: 18px;
+    }
+    h1 { margin: 0 0 8px; font-size: clamp(1.7rem, 5vw, 2.4rem); }
+    .muted { color: #9caec4; }
+    .meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+    .pill {
+      background: #1d3049; border: 1px solid #34506f;
+      border-radius: 999px; padding: 7px 11px; font-size: .85rem;
+    }
+    form { display: flex; gap: 10px; margin-top: 18px; }
+    input {
+      flex: 1; min-width: 0; padding: 13px 14px; border-radius: 9px;
+      border: 1px solid #40536d; background: #0b1423; color: #fff;
+      font: inherit;
+    }
+    button {
+      border: 0; border-radius: 9px; padding: 0 18px;
+      background: #38bdf8; color: #082032; font-weight: 700; cursor: pointer;
+    }
+    button:hover { background: #7dd3fc; }
+    ul { list-style: none; padding: 0; margin: 16px 0 0; }
+    li {
+      padding: 13px 14px; margin-top: 9px; border-radius: 9px;
+      background: #0b1423; border: 1px solid #26364d;
+      overflow-wrap: anywhere;
+    }
+    .empty { padding: 18px; border: 1 dashed #40536d; border-radius: 9px; }
+    #feedback { min-height: 1.4em; margin-top: 10px; color: #7dd3fc; }
+    @media (max-width: 520px) {
+      form { flex-direction: column; }
+      button { min-height: 44px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <section class="panel">
+    <h1>Flask + MySQL Docker Lab</h1>
+    <p class="muted">A tiny two-tier application for learning Docker networking.</p>
+    <div class="meta">
+      <span class="pill">Flask container: {{ hostname }}</span>
+      <span class="pill">MySQL host: {{ db_host }}</span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Send a message</h2>
+    <p class="muted">Your message is saved in the MySQL container.</p>
+    <form id="message-form">
+      <input name="new_message" id="new_message" maxlength="500"
+             placeholder="Type a message..." required>
+      <button type="submit">Save message</button>
+    </form>
+    <p id="feedback" role="status"></p>
+  </section>
+
+  <section class="panel">
+    <h2>Messages from MySQL</h2>
+    {% if messages %}
+      <ul id="message-list">
+        {% for item in messages %}
+          <li data-id="{{ item.id }}">
+            <strong>#{{ item.id }}</strong> — {{ item.message }}
+            <div class="muted">{{ item.created_at }}</div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="empty muted" id="empty-state">No messages yet. Add the first one above.</p>
+      <ul id="message-list"></ul>
+    {% endif %}
+  </section>
+</main>
+
+<script>
+  const form = document.getElementById("message-form");
+  const input = document.getElementById("new_message");
+  const feedback = document.getElementById("feedback");
+  const list = document.getElementById("message-list");
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const body = new FormData(form);
+    feedback.textContent = "Saving...";
+
+    try {
+      const response = await fetch("/submit", { method: "POST", body });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Request failed");
+
+      const item = document.createElement("li");
+      item.textContent = result.message;
+      list.prepend(item);
+      const emptyState = document.getElementById("empty-state");
+      if (emptyState) emptyState.remove();
+
+      input.value = "";
+      feedback.textContent = "Message saved successfully.";
+    } catch (error) {
+      feedback.textContent = error.message;
+    }
+  });
+</script>
+</body>
+</html>
