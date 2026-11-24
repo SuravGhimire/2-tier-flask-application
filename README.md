@@ -2,102 +2,122 @@
 
 A small two-tier application designed to practice Docker networking. The Flask web application runs in one container and MySQL runs in another. Both containers join a user-created Docker bridge network and communicate using the MySQL container name.
 
-## 1. What we are building
 
-```text
-                 Your browser
-             http://localhost:5000
-                       |
-                       | published port 5000
-                       v
-        +----------------------------------+
-        |       Custom Docker network     |
-        |          app-network            |
-        |                                  |
-        |  +----------------+              |
-        |  | Flask container|              |
-        |  | flask-container|              |
-        |  | TCP :5000      |              |
-        |  +-------+--------+              |
-        |          |                       |
-        |          | MySQL connection      |
-        |          | mysql-container:3306  |
-        |          v                       |
-        |  +----------------+              |
-        |  | MySQL container|              |
-        |  | mysql-container|              |
-        |  | TCP :3306      |              |
-        |  +-------+--------+              |
-        +----------|-----------------------+
-                   |
-                   v
-            Docker volume
-              mysql-data
-```
 
-The browser talks to Flask through the published host port. Flask talks to MySQL over the private Docker network. MySQL does not need a published host port for this application to work.
 
-## 2. Project structure
+## What Happens When the Application Runs?
 
-```text
-flask-mysql-docker-lab/
-├── app.py
-├── templates/
-│   └── index.html
-├── Dockerfile
-├── requirements.txt
-├── .dockerignore
-└── README.md
-```
+1. Docker creates a custom bridge network named `two-tier`.
+2. A MySQL container starts with the container name `mysql`.
+3. MySQL creates and uses the database named `devops`.
+4. Docker builds the Flask image using the `Dockerfile`, naming it `two-tier-backend:latest`.
+5. A Flask container starts with the name `flask-container`.
+6. Both containers connect to the same custom bridge network, `two-tier`.
+7. Flask uses `MYSQL_HOST=mysql` to locate the MySQL container through Docker's embedded DNS.
+8. Flask connects to MySQL on its internal port `3306`.
+9. You open the web application at `http://localhost:5000`.
+10. When you submit a message, Flask inserts it into the MySQL `messages` table.
+11. You can inspect the database, Docker network, container logs, and container connectivity.
 
-## 3. What happens when the application runs?
+## Important Docker Networking Concepts
 
-1. Docker creates a custom bridge network named `app-network`.
-2. Docker creates a named volume called `mysql-data` to persist database files.
-3. A MySQL container starts on `app-network` with the name `mysql-container`.
-4. A Flask image is built from the Dockerfile.
-5. A Flask container starts on the same `app-network`.
-6. Flask uses `MYSQL_HOST=mysql-container` to find MySQL through Docker's embedded DNS.
-7. You open the web page, submit a message, and Flask inserts it into MySQL.
-8. You can inspect the network and test connectivity from inside the containers.
+| Concept | What You Learn |
+|---|---|
+| Bridge driver | Connects containers through a Docker bridge network |
+| Custom bridge network | Provides isolated networking between containers |
+| Container DNS | Allows containers to find each other using container names |
+| Port publishing | Makes a container port accessible from the host |
+| Internal port | Allows container-to-container communication without publishing the database port |
+| Docker volume | Can persist MySQL data beyond the container lifecycle |
+| Network inspection | Shows connected containers and their network IP addresses |
 
-## 4. Prerequisites
+## Docker Network Configuration
 
-Install Docker Engine or Docker Desktop. Verify the installation:
+This project uses a custom Docker bridge network named `two-tier`.
+
+Inspect the network:
 
 ```bash
-docker --version
-docker info
+docker network inspect two-tier
 ```
 
-Run the following commands from the project root directory.
+The Flask and MySQL containers should both appear under the network's connected containers.
 
-## 5. Step 1 — Create a custom Docker network
+### Container Communication
+
+The Flask application connects to MySQL using:
 
 ```bash
-docker network create \
-  --driver bridge \
-  --subnet 172.25.0.0/16 \
-  app-network
+MYSQL_HOST=mysql
+MYSQL_PORT=3306
 ```
 
-What these options mean:
+Here, `mysql` is the MySQL container name.
 
-- `docker network create`: creates a Docker network.
-- `--driver bridge`: uses Docker's built-in bridge network driver.
-- `--subnet`: assigns a custom IP address range.
-- `app-network`: the network name.
+Docker's embedded DNS resolves this container name to its IP address because both containers are connected to the same user-defined bridge network.
 
-Inspect it:
+**Important:** The MySQL port `3306` does not need to be published to the host for Flask to communicate with MySQL.
+
+## Expected Final Result
+
+After completing the project, you should have:
+
+- One custom Docker bridge network: `two-tier`.
+- One Flask container: `flask-container`.
+- One MySQL container: `mysql`.
+- One Flask Docker image: `two-tier-backend:latest`.
+- One MySQL database: `devops`.
+- One MySQL table: `messages`.
+- A working Flask application accessible at `http://localhost:5000`.
+- Successful container-to-container communication using Docker's embedded DNS.
+
+## Verify the Application
+
+### Check Running Containers
 
 ```bash
-docker network ls
-docker network inspect app-network
+docker ps
+```
+
+### Check the Docker Network
+
+```bash
+docker network inspect two-tier
+```
+
+### Check Flask Logs
+
+```bash
+docker logs flask-container
+```
+
+### Access the MySQL Container
+
+```bash
+docker exec -it mysql bash
+```
+
+Log in to MySQL:
+
+```bash
+mysql -u root -p
+```
+
+Inspect the database:
+
+```sql
+SHOW DATABASES;
+
+USE devops;
+
+SHOW TABLES;
+
+SELECT * FROM messages;
 ```
 
 Note: This is a custom network using Docker's built-in `bridge` driver. You are creating a network, not implementing a new network-driver plugin.
 
-## 6. Step 2 — Start the MySQL container
+##  Start the MySQL container
 
 ```bash
 docker run -d \
@@ -128,26 +148,15 @@ docker exec mysql-container \
 
 The `mysql-data` named volume keeps database files when the container is removed and recreated.
 
-## 7. Step 3 — Build the Flask image
 
-```bash
-docker build -t flask-network-lab:1.0 .
-```
-
-Check the image:
-
-```bash
-docker images
-```
-
-## 8. Step 4 — Run the Flask container
+##  Run the Flask container
 
 ```bash
 docker run -d \
   --name flask-container \
-  --network app-network \
+  --network two-tier \
   -p 5000:5000 \
-  -e MYSQL_HOST=mysql-container \
+  -e MYSQL_HOST=mysql \
   -e MYSQL_PORT=3306 \
   -e MYSQL_USER=app_user \
   -e MYSQL_PASSWORD=app_password \
@@ -157,9 +166,9 @@ docker run -d \
 
 Important:
 
-- `--network app-network` connects Flask to the same network as MySQL.
+- `--network two-tier` connects Flask to the same network as MySQL.
 - `-p 5000:5000` publishes Flask's port to your host.
-- `MYSQL_HOST=mysql-container` uses the MySQL container name as its hostname.
+- `MYSQL_HOST=mysql` uses the MySQL container name as its hostname.
 - Port `3306` is reachable between containers on the shared network. You do not need `-p 3306:3306` on MySQL.
 
 ## 9. Step 5 — Test the application
@@ -185,162 +194,32 @@ docker logs flask-container
 docker logs mysql-container
 ```
 
-## 10. Step 6 — Verify Docker networking
 
-List networks:
 
-```bash
-docker network ls
-```
+## Key Takeaway
 
-Inspect the custom network:
+**Containers do not need to expose their ports to the host to communicate with each other.**
 
-```bash
-docker network inspect app-network
-```
+When containers share a user-defined Docker bridge network, they can communicate using container names through Docker's embedded DNS.
 
-Look for both `flask-container` and `mysql-container` in the `Containers` section. They should both have IP addresses in the configured subnet.
+In this project, the Flask container communicates with the MySQL container using `mysql` as the hostname and `3306` as the internal database port.
 
-Test DNS resolution from Flask:
+This demonstrates the fundamentals of Docker networking and how a two-tier application communicates across separate containers.
 
-```bash
-docker exec flask-container python -c \
-"import socket; print(socket.gethostbyname('mysql-container'))"
-```
+## Future Improvement: Persistent MySQL Storage
 
-You can also test the MySQL TCP port from Flask using Python:
+A named Docker volume can be added to persist MySQL database files even if the MySQL container is removed and recreated.
+
+For example:
 
 ```bash
-docker exec flask-container python -c \
-"import socket; s=socket.create_connection(('mysql-container',3306),timeout=5); print('MySQL TCP connection successful'); s.close()"
+docker volume create mysql-data
 ```
 
-These tests verify name resolution and TCP reachability. The application itself verifies that the database credentials work.
-
-## 11. Step 7 — Verify that messages are stored in MySQL
-
-Connect to MySQL from inside its container:
+When creating a new MySQL container, mount the volume:
 
 ```bash
-docker exec -it mysql-container \
-  mysql -u app_user -p flask_messages
+-v mysql-data:/var/lib/mysql
 ```
 
-Enter the password:
-
-```text
-app_password
-```
-
-Run:
-
-```sql
-SHOW TABLES;
-SELECT * FROM messages;
-EXIT;
-```
-
-## 12. Step 8 — Understand network isolation
-
-Now let's see what happens when Flask and MySQL are not on the same network.
-
-Create a second test network:
-
-```bash
-docker network create isolated-network
-```
-
-Disconnect Flask from the original network:
-
-```bash
-docker network disconnect app-network flask-container
-```
-
-Connect Flask to the isolated network:
-
-```bash
-docker network connect isolated-network flask-container
-```
-
-Try DNS resolution:
-
-```bash
-docker exec flask-container python -c \
-"import socket; print(socket.gethostbyname('mysql-container'))"
-```
-
-It should fail because Flask and MySQL no longer share a network.
-
-Restore the original setup:
-
-```bash
-docker network disconnect isolated-network flask-container
-docker network connect app-network flask-container
-```
-
-Try the DNS test again. It should now work.
-
-You can remove the extra network:
-
-```bash
-docker network rm isolated-network
-```
-
-## 13. Step 9 — Cleanup
-
-Stop and remove the containers:
-
-```bash
-docker rm -f flask-container mysql-container
-```
-
-Remove the custom network:
-
-```bash
-docker network rm app-network
-```
-
-Remove the database volume only if you also want to delete all persisted database data:
-
-```bash
-docker volume rm mysql-data
-```
-
-## 14. Important Docker networking concepts
-
-| Concept | What you learn |
-|---|---|
-| Bridge driver | Connects containers on a Docker bridge network |
-| Custom bridge network | Provides isolated container networking |
-| Container DNS | Containers can resolve each other by name |
-| Port publishing | Makes a container port accessible from the host |
-| Internal port | Allows container-to-container communication |
-| Docker volume | Persists MySQL data beyond the container lifecycle |
-| Network inspection | Shows connected containers and their IP addresses |
-
-## 15. Practice challenges
-
-Try these yourself after completing the project:
-
-- [ ] Create the network without specifying a subnet and inspect the assigned subnet.
-- [ ] Run both containers and inspect their IP addresses.
-- [ ] Change `MYSQL_HOST` to an incorrect hostname and observe the error.
-- [ ] Remove Flask from `app-network` and test database connectivity.
-- [ ] Reconnect Flask and verify that the application works again.
-- [ ] Stop and recreate MySQL while retaining the `mysql-data` volume.
-- [ ] Remove and recreate the Flask container without rebuilding its image.
-- [ ] Run a second Flask container on the same network and observe how it can also reach MySQL.
-- [ ] Try connecting to MySQL from your host without publishing port 3306, and compare that with container-to-container access.
-
-## 16. Expected final result
-
-You should end up with:
-
-- One custom bridge network: `app-network`.
-- One Flask container: `flask-container`.
-- One MySQL container: `mysql-container`.
-- One Docker volume: `mysql-data`.
-- A working Flask application at `http://localhost:5000`.
-- Successful DNS resolution from Flask to MySQL using `mysql-container`.
-
-**The key lesson:** Containers do not need to expose their ports to the host to communicate with each other. When they share a user-defined Docker bridge network, they can communicate using container names through Docker's embedded DNS.
+This is a recommended improvement for the project. The current setup should not be described as using this volume unless you actually create and attach it.
